@@ -18,7 +18,6 @@ public class SimulationPanel extends JPanel implements ActionListener {
     private final List<SimulationStats> statsHistory = new ArrayList<>();
     private SeasonManager seasonManager;
     private long lastUpdateTime;
-    private Color simulationBackground = Color.LIGHT_GRAY;
     private JCheckBox seasonsCheckBox;
     private Timer timer;
     public int simScreenX;
@@ -68,7 +67,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
         });
         events.subscribe(eventFeed);
 
-        seasonManager = new SeasonManager(this, events);
+        seasonManager = new SeasonManager(events);
 
         lastUpdateTime = System.currentTimeMillis();
 
@@ -162,7 +161,6 @@ public class SimulationPanel extends JPanel implements ActionListener {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        g.setColor(simulationBackground);
 
         drawSimBorder(g);
         drawStats(g);
@@ -194,6 +192,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
     }
 
     public void drawSimBorder(Graphics g) {
+        Color simulationBackground = seasonManager.getBackground();
         // Sim screen borders
         g.setColor(simulationBackground);
         g.fillRect(offset, offset, simScreenX - offset, simScreenY - offset);
@@ -386,11 +385,6 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
     public List<SimulationStats> getStatsHistory() {
         return statsHistory;
-    }
-
-    public void setSimulationBackground(Color background) {
-        simulationBackground = background;
-        repaint();
     }
 
 
