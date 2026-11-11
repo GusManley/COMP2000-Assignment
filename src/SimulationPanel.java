@@ -156,7 +156,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
     public void createCells() {
         try {
-            validate();
+            checkStartingCounts();
         } catch (InvalidSettingsException e) {
             Settings.INFECTED_COUNT = 3;
             Settings.ANTIVIRUS_COUNT = 3;
@@ -211,17 +211,17 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
         if (numOfInfected <= 5 && Berserk.getBerserkChanceLeft() > 0 && !Berserk.isBerserk()) {
             try {
-                Berserk.EnterBerserk(); // Enter berserk mode
-            } catch (Exception e) {
-                System.out.println("Failed to enter Berserk");
-            }finally {
-            
-            // Make infected cells berserk
-            for (Cell c : cells) {
-                if (c.getState() == InfectedState.INSTANCE) {
-                    c.isBerserk = true;
+                Berserk.EnterBerserk(); // Throws if berserk is not allowed right now
+
+                // Only reached if EnterBerserk() succeeded, so cells are never
+                // marked berserk when the exception says berserk was refused.
+                for (Cell c : cells) {
+                    if (c.getState() == InfectedState.INSTANCE) {
+                        c.isBerserk = true;
+                    }
                 }
-            }
+            } catch (IllegalBerserkException e) {
+                System.out.println("Failed to enter Berserk: " + e.getMessage());
             }
         } 
         else if (!Berserk.isBerserk()) {
@@ -332,16 +332,6 @@ public class SimulationPanel extends JPanel implements ActionListener {
         repaint();
     }
 
-    public void randomDeath(Cell c, int id) {
-        double randomNum = Math.random();
-        if (randomNum < 0.0001) { // small chance to die
-            cells.remove(id);
-            deadCellCount++;
-        }
-
-        repaint();
-    }
-
     public float calculateR0() {
         float r0InfectedCount = 0;
         float totalInfectionsCaused = 0;
@@ -388,7 +378,14 @@ public class SimulationPanel extends JPanel implements ActionListener {
         }
     }
 
-    public void validate() {
+    /**
+     * Checks the starting populations fit inside the total cell count.
+     * Previously named validate(), which accidentally overrode JPanel.validate().
+     * Swing calls validate() itself while laying out the window, so the check ran
+     * (and could throw) inside Swing's layout pass, and the panel's own children
+     * were no longer validated through it.
+     */
+    private void checkStartingCounts() {
         if (Settings.INFECTED_COUNT + Settings.ANTIVIRUS_COUNT > Settings.CELL_COUNT) {
             throw new InvalidSettingsException("Infected + antivirus exceeds total cell count");
         }

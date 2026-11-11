@@ -3,7 +3,7 @@ public class BerserkState {
     private int enterBerserkChance; // Chances left to enter berserk
 
     private long berserkStartTime; // start counting berserk state
-    private int berserkDuration = 10000; // duration 5 secs
+    private int berserkDuration = 10000; // duration 10 secs (in milliseconds)
 
     public BerserkState() {
         this.isBerserk = false; // Start no berserk
@@ -22,7 +22,7 @@ public class BerserkState {
             throw new IllegalBerserkException("No berserk uses remaining"); // prevent calling  enterBerserk when no Berserk chances left
         }
         if (this.isBerserk) {
-            throw new IllegalBerserkException("No berserk uses remaining"); // prevent calling enterBerserk when infected cells are already in berserk state
+            throw new IllegalBerserkException("Already berserk"); // prevent calling enterBerserk when infected cells are already in berserk state
         }
 
         this.isBerserk = true;

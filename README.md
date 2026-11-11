@@ -39,7 +39,7 @@ Settings panel allow user to set specific interactions such as:
 - Infected Cell
     - BERSERK - infected cells can enter berserk when low in number. When berserk every cells it collided with will turn to infected cell and berserk cell gains immunity
         - Curently have 5 berserk chances
-        - berserk last 5 secs
+        - berserk lasts 10 secs
         - Indicated by infected cells have yellow aura pulsing
     - RESISTANCE - Infected cells can gain resistance to anti-viruses, increasing the chance of their survival
 - Antivirus Cell

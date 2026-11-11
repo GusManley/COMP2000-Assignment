@@ -25,7 +25,7 @@ public class Resistance {
         if (level < MAX_LEVEL) level++;
     }
 
-    /** Reset resistance to 0.1. */
+    /** Reset resistance to 0. */
     public void reset() {
         level = 0;
     }

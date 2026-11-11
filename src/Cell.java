@@ -232,8 +232,7 @@ public class Cell {
                 if (opponent.isBerserk) {
                     thisNewState = InfectedState.INSTANCE;
                     oppNewState = InfectedState.INSTANCE;
-                }
-                if (opponent.resistance.canResistAntivirus()) {
+                } else if (opponent.resistance.canResistAntivirus()) {
                     oppNewState = InfectedState.INSTANCE;
                     opponent.resistance.increaseLevel();
                 }

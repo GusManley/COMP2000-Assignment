@@ -141,7 +141,7 @@ public class SeasonManager {
 
             iterator.next();
 
-            // 2% chance for this cell to die.
+            // 3% chance for this cell to die.
             if (random.nextDouble() < 0.03) {
 
                 iterator.remove();
@@ -198,7 +198,7 @@ public class SeasonManager {
 
             if (currentSeason == Season.SUMMER) {
 
-                // Infected cells move 1.2x faster.
+                // Infected cells move 1.4x faster.
                 if (cell.getState().equals(InfectedState.INSTANCE)) {
 
                     cell.setSpeedMultiplier(1.4);
