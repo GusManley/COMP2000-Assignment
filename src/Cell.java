@@ -438,6 +438,27 @@ public class Cell {
         sizeMultiplier = multiplier;
     }
 
+    /** True if this cell is currently in the given state. */
+    public boolean is(CellState wanted) {
+        return state == wanted;
+    }
+
+    /** Infected and antivirus cells can duplicate; neutral cells only reproduce in spring. */
+    public boolean canDuplicate() {
+        return state == InfectedState.INSTANCE || state == AntivirusState.INSTANCE;
+    }
+
+    /** A copy of this cell at the same position, drawn with an orange outline. */
+    public Cell duplicate(int newId) {
+        return new Cell(x, y, newId, state, Color.ORANGE, true);
+    }
+
+    /** Starts a new R0 measuring window for this cell. */
+    public void resetInfectionWindow() {
+        infectionsCaused = 0;
+        infectedThisWindow = false;
+    }
+
 }
 
 class InvalidArgumentException extends RuntimeException {

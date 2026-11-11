@@ -1,6 +1,4 @@
 import java.awt.Color;
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.function.Consumer;
@@ -51,30 +49,30 @@ public class SeasonManager {
 
     /** Winter: every second each cell has a 3% chance to die. */
     private static void winterDeaths(List<Cell> cells, Random random, OutbreakEvents events) {
-        Iterator<Cell> iterator = cells.iterator();
-        while (iterator.hasNext()) {
-            Cell cell = iterator.next();
-            if (random.nextDouble() < 0.03) {
-                iterator.remove();
-                events.died(cell);
-            }
-        }
+        List<Cell> dying = cells.stream()
+                .filter(cell -> random.nextDouble() < 0.03)
+                .toList();
+
+        cells.removeAll(dying);
+        dying.forEach(events::died);
     }
 
     /** Spring: every second each neutral cell has a 10% chance to reproduce. */
     private static void springBirths(List<Cell> cells, Random random, OutbreakEvents events) {
-        List<Cell> newCells = new ArrayList<>();
-        for (Cell cell : cells) {
-            if (cell.getState() == NeutralState.INSTANCE && random.nextDouble() < 0.10) {
-                double newX = cell.getX() + (random.nextDouble() * 10 - 5);
-                double newY = cell.getY() + (random.nextDouble() * 10 - 5);
-                Cell child = new Cell(newX, newY, cells.size() + newCells.size(), NeutralState.INSTANCE);
-                newCells.add(child);
-                events.born(cell, child);
-            }
-        }
-        // Add the new cells after the loop, so we don't modify the list while iterating it.
-        cells.addAll(newCells);
+        // Pick the parents first. The stream finishes before cells is changed, so we never
+        // modify the list while it is being streamed.
+        List<Cell> parents = cells.stream()
+                .filter(cell -> cell.is(NeutralState.INSTANCE))
+                .filter(cell -> random.nextDouble() < 0.10)
+                .toList();
+
+        parents.forEach(parent -> {
+            double newX = parent.getX() + (random.nextDouble() * 10 - 5);
+            double newY = parent.getY() + (random.nextDouble() * 10 - 5);
+            Cell child = new Cell(newX, newY, cells.size(), NeutralState.INSTANCE);
+            cells.add(child);
+            events.born(parent, child);
+        });
     }
 
     /** Summer: infected cells move 1.4x faster. */

@@ -8,6 +8,8 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.DoubleSupplier;
+import java.util.stream.IntStream;
 import javax.swing.JButton;
 import javax.swing.JPanel;
 import javax.swing.Timer;
@@ -177,18 +179,23 @@ public class SimulationPanel extends JPanel implements ActionListener {
             Settings.INFECTED_COUNT = 3;
             Settings.ANTIVIRUS_COUNT = 3;
         }
-        for (int i = 0; i < cellCount; i++) {
-            double randomX = offset + Math.random() * (simScreenX - 2 * offset - 20);
-            double randomY = offset + Math.random() * (simScreenY - 2 * offset - 20);
+        // Suppliers: each call gives a new random position inside the borders.
+        DoubleSupplier randomX = () -> offset + Math.random() * (simScreenX - 2 * offset - 20);
+        DoubleSupplier randomY = () -> offset + Math.random() * (simScreenY - 2 * offset - 20);
 
-            if (i < Settings.INFECTED_COUNT) {
-                cells.add(new Cell(randomX, randomY, i, InfectedState.INSTANCE));
-            } else if (i < Settings.ANTIVIRUS_COUNT + Settings.INFECTED_COUNT) {
-                cells.add(new Cell(randomX, randomY, i, AntivirusState.INSTANCE));
-            } else {
-                cells.add(new Cell(randomX, randomY, i, NeutralState.INSTANCE));
-            }
+        IntStream.range(0, cellCount)
+                .mapToObj(i -> new Cell(randomX.getAsDouble(), randomY.getAsDouble(), i, startingState(i)))
+                .forEach(cells::add);
+    }
+
+    /** The first cells are infected, the next are antivirus, and the rest are neutral. */
+    private static CellState startingState(int index) {
+        if (index < Settings.INFECTED_COUNT) {
+            return InfectedState.INSTANCE;
+        } else if (index < Settings.INFECTED_COUNT + Settings.ANTIVIRUS_COUNT) {
+            return AntivirusState.INSTANCE;
         }
+        return NeutralState.INSTANCE;
     }
 
     public void drawSimBorder(Graphics g) {
@@ -206,17 +213,9 @@ public class SimulationPanel extends JPanel implements ActionListener {
         g.fillRect(offset, offset, simScreenX - offset, simScreenY - offset);
     }
 
-    public int[] countByType() {
-        int neutral = 0, infected = 0, antivirus = 0;
-        for (Cell c : cells) {
-            if (c.getState() == NeutralState.INSTANCE)
-                neutral++;
-            if (c.getState() == InfectedState.INSTANCE)
-                infected++;
-            if (c.getState() == AntivirusState.INSTANCE)
-                antivirus++;
-        }
-        return new int[] { neutral, infected, antivirus };
+    /** A one-pass count of the current population (see CensusCollector). */
+    public Census census() {
+        return Census.of(cells);
     }
 
     public void EnterBerserk() {
@@ -224,7 +223,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
             return;
         }
 
-        int numOfInfected = countByType()[1];
+        int numOfInfected = census().infected();
 
         if (numOfInfected <= 5 && Berserk.getBerserkChanceLeft() > 0 && !Berserk.isBerserk()) {
             try {
@@ -232,32 +231,25 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
                 // Only reached if EnterBerserk() succeeded, so cells are never
                 // marked berserk when the exception says berserk was refused.
-                for (Cell c : cells) {
-                    if (c.getState() == InfectedState.INSTANCE) {
-                        c.isBerserk = true;
-                    }
-                }
+                cells.stream()
+                        .filter(c -> c.is(InfectedState.INSTANCE))
+                        .forEach(c -> c.isBerserk = true);
             } catch (IllegalBerserkException e) {
                 System.out.println("Failed to enter Berserk: " + e.getMessage());
             }
         } 
         else if (!Berserk.isBerserk()) {
 
-            for (Cell c : cells) {
-                if (c.isBerserk) {
-                    c.isBerserk = false;
-                }
-            }
-
-            // Turn Berserk state off
+            // Berserk has ended, so clear it from every cell
+            cells.forEach(c -> c.isBerserk = false);
         }
     }
 
     public void drawStats(Graphics g) {
-        int[] counts = countByType();
-        int neutralCount = counts[0];
-        int infectedCount = counts[1];
-        int antivirusCount = counts[2];
+        Census census = census();
+        int neutralCount = census.neutral();
+        int infectedCount = census.infected();
+        int antivirusCount = census.antivirus();
 
         g.setFont(new Font("Times New Roman", Font.PLAIN, 30));
         g.setColor(Color.BLACK);
@@ -282,13 +274,41 @@ public class SimulationPanel extends JPanel implements ActionListener {
         g.setColor(Color.magenta);
         g.drawString("R0 Value: " + r0, simScreenX + offset, offset * 28);
 
+        drawEvolution(g, census);
         drawEventFeed(g);
     }
 
-    /** Lists the latest outbreak events under the reset button. */
-    private void drawEventFeed(Graphics g) {
+    /** How resistant the virus has become, under the reset button. */
+    private void drawEvolution(Graphics g, Census census) {
         int x = simScreenX + offset;
         int y = offset * 52;
+        g.setFont(new Font("Times New Roman", Font.BOLD, 16));
+        g.setColor(Color.WHITE);
+        g.drawString("Virus evolution", x, y);
+
+        g.setFont(new Font("Times New Roman", Font.PLAIN, 14));
+        g.setColor(Color.LIGHT_GRAY);
+        List<Integer> levels = census.resistanceLevels();
+        g.drawString(String.format("Avg resistance: %.2f", census.averageResistance()), x, y += 18);
+        g.drawString("Lv0 " + levels.get(0) + "  Lv1 " + levels.get(1)
+                + "  Lv2 " + levels.get(2) + "  Lv3 " + levels.get(3), x, y += 18);
+        g.drawString(resistanceTrend(), x, y += 18);
+        g.drawString("Immune: " + census.immune() + "  Berserk: " + census.berserk(), x, y += 18);
+    }
+
+    /** Average resistance at the first snapshot compared with the latest one. */
+    private String resistanceTrend() {
+        return statsHistory.stream().findFirst()
+                .map(first -> String.format("Trend: %.2f -> %.2f",
+                        first.getAverageResistance(),
+                        statsHistory.get(statsHistory.size() - 1).getAverageResistance()))
+                .orElse("Trend: waiting for data");
+    }
+
+    /** Lists the latest outbreak events under the virus evolution block. */
+    private void drawEventFeed(Graphics g) {
+        int x = simScreenX + offset;
+        int y = offset * 52 + 100;
         g.setFont(new Font("Times New Roman", Font.BOLD, 16));
         g.setColor(Color.WHITE);
         g.drawString("Recent events", x, y);
@@ -312,7 +332,9 @@ public class SimulationPanel extends JPanel implements ActionListener {
         for (Cell cell : cells) {
             cell.move(simScreenX, simScreenY, offset, offset);
         }
-        // Check cell collisions.
+        // Check cell collisions. This stays a plain loop on purpose: each collision changes
+        // both cells, so the order matters and the work can't be split up safely, and a
+        // nested IntStream over the pairs would be harder to read than this loop.
         for (int i = 0; i < cells.size(); i++) {
 
             for (int j = i + 1; j < cells.size(); j++) {
@@ -330,57 +352,36 @@ public class SimulationPanel extends JPanel implements ActionListener {
         // Update the season system.
         seasonManager.update(cells, deltaTime);
 
-        List<Cell> toRemove = new ArrayList<>();
-        List<Cell> toAdd = new ArrayList<>();
-        for (Cell c : cells) {
-            if (Math.random() < 0.0001) {
-                toRemove.add(c);
-                events.died(c);
-            }
-            if ((c.getState() == InfectedState.INSTANCE || c.getState() == AntivirusState.INSTANCE)
-                    && Math.random() < 0.0002) {
-                Cell child = new Cell(c.getX(), c.getY(), cells.size(), c.getState(), Color.ORANGE, true);
-                toAdd.add(child);
-                events.born(c, child);
-            }
-        }
+        // Random deaths and duplications. Both lists are picked from the population as it
+        // is now, before either change is applied (a dying cell can still duplicate).
+        List<Cell> dying = cells.stream()
+                .filter(c -> Math.random() < 0.0001)
+                .toList();
+        List<Cell> duplicating = cells.stream()
+                .filter(Cell::canDuplicate)
+                .filter(c -> Math.random() < 0.0002)
+                .toList();
 
-        cells.removeAll(toRemove);
-        cells.addAll(toAdd);
+        cells.removeAll(dying);
+        dying.forEach(events::died);
+        duplicating.forEach(parent -> {
+            Cell child = parent.duplicate(cells.size());
+            cells.add(child);
+            events.born(parent, child);
+        });
 
         if (simTick % 125 == 0) {
-            r0 = calculateR0();
+            Census census = census();
+            r0 = census.r0();
+            statsHistory.add(SimulationStats.from(census, deadCellCount, duplicateCellCount, simTick));
 
-            int[] counts = countByType();
-            statsHistory.add(new SimulationStats(
-                    counts[0], counts[1], counts[2],
-                    deadCellCount, duplicateCellCount, r0, simTick));
-
-            for (Cell c : cells) {
-                c.infectionsCaused = 0;
-                c.infectedThisWindow = false;
-            }
+            cells.forEach(Cell::resetInfectionWindow);
         }
 
         EnterBerserk();
 
         // Draw next frame.
         repaint();
-    }
-
-    public float calculateR0() {
-        float r0InfectedCount = 0;
-        float totalInfectionsCaused = 0;
-        for (Cell c : cells) {
-            if (c.infectedThisWindow) {
-                r0InfectedCount++;
-                totalInfectionsCaused += c.infectionsCaused;
-            }
-        }
-        if (r0InfectedCount == 0) {
-            return 0;
-        }
-        return totalInfectionsCaused / r0InfectedCount;
     }
 
     public List<SimulationStats> getStatsHistory() {
