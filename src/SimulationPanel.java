@@ -36,6 +36,8 @@ public class SimulationPanel extends JPanel implements ActionListener {
     private int simTick = 0;
     private float r0 = 0;
     public BerserkState Berserk;
+    private final OutbreakEvents events = new OutbreakEvents();
+    private final EventFeed eventFeed = new EventFeed();
 
     public SimulationPanel() {
         this.setPreferredSize(new Dimension(1200, 1200));
@@ -51,7 +53,22 @@ public class SimulationPanel extends JPanel implements ActionListener {
             }
         });
 
-        seasonManager = new SeasonManager(this);
+        // Observers: the counters only care about births and deaths, so this anonymous
+        // listener overrides just those two methods. The feed listens for outbreak events.
+        events.subscribe(new OutbreakListener() {
+            @Override
+            public void cellDied(Cell cell) {
+                deadCellCount++;
+            }
+
+            @Override
+            public void cellBorn(Cell parent, Cell child) {
+                duplicateCellCount++;
+            }
+        });
+        events.subscribe(eventFeed);
+
+        seasonManager = new SeasonManager(this, events);
 
         lastUpdateTime = System.currentTimeMillis();
 
@@ -79,6 +96,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
         simTick = 0;
         r0 = 0;
         seasonManager.reset();
+        eventFeed.clear();
         lastUpdateTime = System.currentTimeMillis();
         Berserk = new BerserkState(); // create new berserk state after every reset
         updateDimensions();
@@ -264,6 +282,24 @@ public class SimulationPanel extends JPanel implements ActionListener {
         g.drawString("Duplicate Cells: " + duplicateCellCount, simScreenX + offset, offset * 25);
         g.setColor(Color.magenta);
         g.drawString("R0 Value: " + r0, simScreenX + offset, offset * 28);
+
+        drawEventFeed(g);
+    }
+
+    /** Lists the latest outbreak events under the reset button. */
+    private void drawEventFeed(Graphics g) {
+        int x = simScreenX + offset;
+        int y = offset * 52;
+        g.setFont(new Font("Times New Roman", Font.BOLD, 16));
+        g.setColor(Color.WHITE);
+        g.drawString("Recent events", x, y);
+
+        g.setFont(new Font("Times New Roman", Font.PLAIN, 14));
+        g.setColor(Color.LIGHT_GRAY);
+        for (String line : eventFeed.recent()) {
+            y += 18;
+            g.drawString(line, x, y);
+        }
     }
 
     @Override
@@ -287,7 +323,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
                 if (a.collidesWith(b)) {
 
-                    a.onCollision(b);
+                    a.onCollision(b, events);
                 }
             }
         }
@@ -300,17 +336,18 @@ public class SimulationPanel extends JPanel implements ActionListener {
         for (Cell c : cells) {
             if (Math.random() < 0.0001) {
                 toRemove.add(c);
+                events.died(c);
             }
             if ((c.getState() == InfectedState.INSTANCE || c.getState() == AntivirusState.INSTANCE)
                     && Math.random() < 0.0002) {
-                toAdd.add(new Cell(c.getX(), c.getY(), cells.size(), c.getState(), Color.ORANGE, true));
+                Cell child = new Cell(c.getX(), c.getY(), cells.size(), c.getState(), Color.ORANGE, true);
+                toAdd.add(child);
+                events.born(c, child);
             }
         }
 
         cells.removeAll(toRemove);
-        deadCellCount += toRemove.size();
         cells.addAll(toAdd);
-        duplicateCellCount += toAdd.size();
 
         if (simTick % 125 == 0) {
             r0 = calculateR0();
@@ -356,15 +393,6 @@ public class SimulationPanel extends JPanel implements ActionListener {
         repaint();
     }
 
-    public void incrementDeadCellCount() {
-
-        deadCellCount++;
-    }
-
-    public void incrementDuplicateCellCount() {
-
-        duplicateCellCount++;
-    }
 
     @Override
     public void addNotify() {

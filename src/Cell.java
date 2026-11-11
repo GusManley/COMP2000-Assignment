@@ -206,10 +206,17 @@ public class Cell {
         // --------------- end resistance level ---------------------
     }
 
-    public void onCollision(Cell opponent) { // change the cell states depending on the type of reaction
+    /**
+     * Changes both cells' states depending on the type of reaction, and reports what
+     * happened (infections, cures, resisted cures) to events so listeners can react.
+     */
+    public void onCollision(Cell opponent, OutbreakEvents events) {
         try {
             if (opponent == null) {
                 throw new InvalidArgumentException("Passed opponent argument is null");
+            }
+            if (events == null) {
+                throw new InvalidArgumentException("Passed events argument is null");
             }
 
             CellState thisOriginState = this.getState();
@@ -225,6 +232,7 @@ public class Cell {
                 } else if (this.resistance.canResistAntivirus()) {
                     thisNewState = InfectedState.INSTANCE;
                     this.resistance.increaseLevel();
+                    events.resisted(this, this.resistance.getLevel());
                 }
                 this.immunity.incrementCuredCount(); // Increase cured counts
             }
@@ -235,6 +243,7 @@ public class Cell {
                 } else if (opponent.resistance.canResistAntivirus()) {
                     oppNewState = InfectedState.INSTANCE;
                     opponent.resistance.increaseLevel();
+                    events.resisted(opponent, opponent.resistance.getLevel());
                 }
                 opponent.immunity.incrementCuredCount(); // Increase cured counts
             }
@@ -301,11 +310,21 @@ public class Cell {
                 infectionsCaused++;
                 opponent.hasBeenInfected = true;
                 opponent.infectedThisWindow = true;
+                events.infected(this, opponent);
 
             } else if (thisOriginState == NeutralState.INSTANCE && thisNewState == InfectedState.INSTANCE) {
                 opponent.infectionsCaused++;
                 hasBeenInfected = true;
                 infectedThisWindow = true;
+                events.infected(opponent, this);
+            }
+
+            // Report cures (infected -> neutral after all the checks above).
+            if (thisOriginState == InfectedState.INSTANCE && thisNewState == NeutralState.INSTANCE) {
+                events.cured(this);
+            }
+            if (oppOriginState == InfectedState.INSTANCE && oppNewState == NeutralState.INSTANCE) {
+                events.cured(opponent);
             }
 
             // Cell state change

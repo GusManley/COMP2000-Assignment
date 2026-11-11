@@ -14,6 +14,7 @@ public class SeasonManager {
     }
 
     private final SimulationPanel simulationPanel;
+    private final OutbreakEvents events;
     private final Random random = new Random();
 
     private Season currentSeason;
@@ -25,9 +26,10 @@ public class SeasonManager {
     private int seasonLengthSeconds;
 
 
-    public SeasonManager(SimulationPanel simulationPanel) {
+    public SeasonManager(SimulationPanel simulationPanel, OutbreakEvents events) {
 
         this.simulationPanel = simulationPanel;
+        this.events = events;
         currentSeason = Season.values()[
             random.nextInt(Season.values().length)
         ];
@@ -139,14 +141,14 @@ public class SeasonManager {
 
         while (iterator.hasNext()) {
 
-            iterator.next();
+            Cell cell = iterator.next();
 
             // 3% chance for this cell to die.
             if (random.nextDouble() < 0.03) {
 
                 iterator.remove();
 
-                simulationPanel.incrementDeadCellCount();
+                events.died(cell);
             }
         }
     }
@@ -167,16 +169,15 @@ public class SeasonManager {
                     double newX = cell.getX() + (random.nextDouble() * 10 - 5);
                     double newY = cell.getY() + (random.nextDouble() * 10 - 5);
 
-                    newCells.add(
-                        new Cell(
-                            newX,
-                            newY,
-                            cells.size() + newCells.size(),
-                            NeutralState.INSTANCE
-                        )
+                    Cell child = new Cell(
+                        newX,
+                        newY,
+                        cells.size() + newCells.size(),
+                        NeutralState.INSTANCE
                     );
+                    newCells.add(child);
 
-                    simulationPanel.incrementDuplicateCellCount();
+                    events.born(cell, child);
                 }
             }
         }
