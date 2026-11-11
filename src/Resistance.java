@@ -1,3 +1,4 @@
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Resistance system for infected cells.
@@ -35,10 +36,10 @@ public class Resistance {
      * @return true if survives (stays infected), false if cured
      */
     public boolean canResistAntivirus() {
-        if (level == 0) return Math.random() < 0.10;  // 10% chance
-        if (level == 1) return Math.random() < 0.20;  // 20% chance
-        if (level == 2) return Math.random() < 0.25;  // 25% chance
-        if (level > 2) return Math.random() < 0.30;  // 30% chance
+        if (level == 0) return ThreadLocalRandom.current().nextDouble() < 0.10;  // 10% chance
+        if (level == 1) return ThreadLocalRandom.current().nextDouble() < 0.20;  // 20% chance
+        if (level == 2) return ThreadLocalRandom.current().nextDouble() < 0.25;  // 25% chance
+        if (level > 2) return ThreadLocalRandom.current().nextDouble() < 0.30;  // 30% chance
         return true;                        
     }
 }

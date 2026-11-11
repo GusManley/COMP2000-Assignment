@@ -1,3 +1,5 @@
+import java.util.concurrent.ThreadLocalRandom;
+
 /**
  * Cell immunity
  * After being cured, the cell gains a chance to gain immunity from an infected cell
@@ -54,7 +56,7 @@ public class CellImmunity {
      */
     public boolean calculateIfImmune() {
         if (curedCount > 0) {
-            return Math.random() < chanceOfImmunity;
+            return ThreadLocalRandom.current().nextDouble() < chanceOfImmunity;
         } else {
             return false;
         }

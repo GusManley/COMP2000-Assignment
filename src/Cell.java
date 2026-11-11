@@ -3,14 +3,15 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.BasicStroke;
 import java.awt.Font;
+import java.util.concurrent.ThreadLocalRandom;
 // Cell Class
 public class Cell {
     private double x;
     private double y;
     private double velX;
     private double velY;
-    public double speed = Settings.CELL_SPEED;
-    private int size = Settings.CELL_SIZE;
+    public double speed;
+    private int size;
 
     private double speedMultiplier = 1.0;
     private double sizeMultiplier = 1.0;
@@ -26,34 +27,34 @@ public class Cell {
     public boolean hasBeenInfected = false;
     public boolean infectedThisWindow = false;
 
-    private boolean collisionEnabled = Settings.hasCollision; // Collision enabled or not
+    private boolean collisionEnabled; // Collision enabled or not
 
     private int tick = 0;
 
+    /** A cell using the size, speed and collision setting currently chosen in Settings. */
     public Cell(double startX, double startY, int id, CellState initialState) {
+        this(startX, startY, id, initialState, Settings.CELL_SIZE, Settings.CELL_SPEED, Settings.hasCollision);
+    }
+
+    /**
+     * A cell with its size, speed and collision setting passed in, instead of read from
+     * the static Settings. The forecast builds its cells on worker threads with this
+     * constructor, so they never read Settings while the user may be dragging a slider.
+     */
+    public Cell(double startX, double startY, int id, CellState initialState,
+                int size, double speed, boolean collisionEnabled) {
         this.x = startX;
         this.y = startY;
         this.id = id;
         this.state = initialState;
         this.color = initialState.getCellColor(); // Set color based on initial state
-        this.velX = ((Math.random() * 3) - 1) * speed;
-        this.velY = ((Math.random() * 3) - 1) * speed;;
+        this.size = size;
+        this.speed = speed;
+        this.collisionEnabled = collisionEnabled;
 
-        if (state.getType().equals("NEUTRAL")) {
-            this.immunity.setIfImmunityAllowed(true);
-        }
-
-    }
-
-    public Cell(double startX, double startY, int id, CellState initialState, Color color, boolean isDuplicate) {
-        this.x = startX;
-        this.y = startY;
-        this.id = id;
-        this.state = initialState;
-        this.color = color;
-        this.isDuplicate = isDuplicate;
-        this.velX = ((Math.random() * 3) - 1) * speed;
-        this.velY = ((Math.random() * 3) - 1) * speed;
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        this.velX = ((random.nextDouble() * 3) - 1) * speed;
+        this.velY = ((random.nextDouble() * 3) - 1) * speed;
 
         if (state.getType().equals("NEUTRAL")) {
             this.immunity.setIfImmunityAllowed(true);
@@ -450,7 +451,10 @@ public class Cell {
 
     /** A copy of this cell at the same position, drawn with an orange outline. */
     public Cell duplicate(int newId) {
-        return new Cell(x, y, newId, state, Color.ORANGE, true);
+        Cell copy = new Cell(x, y, newId, state, size, speed, collisionEnabled);
+        copy.color = Color.ORANGE;
+        copy.isDuplicate = true;
+        return copy;
     }
 
     /** Starts a new R0 measuring window for this cell. */

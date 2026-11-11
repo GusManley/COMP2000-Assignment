@@ -8,10 +8,12 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.DoubleSupplier;
 import java.util.stream.IntStream;
 import javax.swing.JButton;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.JCheckBox;
 
@@ -39,6 +41,13 @@ public class SimulationPanel extends JPanel implements ActionListener {
     public BerserkState Berserk;
     private final OutbreakEvents events = new OutbreakEvents();
     private final EventFeed eventFeed = new EventFeed();
+
+    private static final int FORECAST_TRIALS = 64;
+    private static final int FORECAST_MAX_TICKS = 2000;
+    private JButton forecastButton;
+    // Only read and written on the Swing thread (the worker hands results over with invokeLater).
+    private OutbreakForecast.Forecast forecast;
+    private String forecastError;
 
     public SimulationPanel() {
         this.setPreferredSize(new Dimension(1200, 1200));
@@ -80,11 +89,45 @@ public class SimulationPanel extends JPanel implements ActionListener {
     }
 
     private void createResetButton() {
-        resetButton = new JButton("Reset Simulation");
+        resetButton = new JButton("Reset");
         resetButton.addActionListener((ActionEvent e) -> {
             resetSimulation();
         });
         this.add(resetButton);
+    }
+
+    private void createForecastButton() {
+        forecastButton = new JButton("Forecast");
+        forecastButton.setToolTipText("Run " + FORECAST_TRIALS + " simulations from the current settings");
+        forecastButton.addActionListener(e -> startForecast());
+        this.add(forecastButton);
+    }
+
+    /**
+     * Runs the forecast on background threads so the animation keeps going.
+     *
+     * The settings are copied into an immutable Scenario here, on the Swing thread, before
+     * any worker starts. The result comes back to the Swing thread through invokeLater,
+     * because Swing components and the fields paintComponent reads must only be touched
+     * on the Swing thread.
+     */
+    private void startForecast() {
+        OutbreakForecast.Scenario scenario = OutbreakForecast.Scenario.fromSettings(simScreenX, simScreenY);
+        forecastButton.setEnabled(false);
+        forecastButton.setText("Running...");
+
+        CompletableFuture
+                .supplyAsync(() -> OutbreakForecast.run(scenario, FORECAST_TRIALS, FORECAST_MAX_TICKS, true))
+                .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
+                    if (error != null) {
+                        forecastError = "Forecast failed: " + error.getMessage();
+                    } else {
+                        forecast = result;
+                        forecastError = null;
+                    }
+                    forecastButton.setEnabled(true);
+                    forecastButton.setText("Forecast");
+                }));
     }
 
     public void resetSimulation() {
@@ -127,6 +170,7 @@ public class SimulationPanel extends JPanel implements ActionListener {
 
         if (!buttonCreated && simScreenX > 0 && simScreenY > 0) {
             createResetButton();
+            createForecastButton();
             buttonCreated = true;
         }
 
@@ -145,7 +189,10 @@ public class SimulationPanel extends JPanel implements ActionListener {
         }
         // Reposition button based on window size
         if (resetButton != null) {
-            resetButton.setBounds(simScreenX + offset, offset * 43, 180, 50);
+            resetButton.setBounds(simScreenX + offset, offset * 43, 88, 40);
+        }
+        if (forecastButton != null) {
+            forecastButton.setBounds(simScreenX + offset + 92, offset * 43, 88, 40);
         }
 
         if (settingsPanel != null) {
@@ -275,13 +322,14 @@ public class SimulationPanel extends JPanel implements ActionListener {
         g.drawString("R0 Value: " + r0, simScreenX + offset, offset * 28);
 
         drawEvolution(g, census);
+        drawForecast(g);
         drawEventFeed(g);
     }
 
     /** How resistant the virus has become, under the reset button. */
     private void drawEvolution(Graphics g, Census census) {
         int x = simScreenX + offset;
-        int y = offset * 52;
+        int y = offset * 50;
         g.setFont(new Font("Times New Roman", Font.BOLD, 16));
         g.setColor(Color.WHITE);
         g.drawString("Virus evolution", x, y);
@@ -305,10 +353,33 @@ public class SimulationPanel extends JPanel implements ActionListener {
                 .orElse("Trend: waiting for data");
     }
 
-    /** Lists the latest outbreak events under the virus evolution block. */
+    /** The latest forecast result, under the virus evolution block. */
+    private void drawForecast(Graphics g) {
+        int x = simScreenX + offset;
+        int y = offset * 60;
+        g.setFont(new Font("Times New Roman", Font.BOLD, 16));
+        g.setColor(Color.WHITE);
+        g.drawString("Forecast", x, y);
+
+        g.setFont(new Font("Times New Roman", Font.PLAIN, 14));
+        g.setColor(Color.LIGHT_GRAY);
+        if (forecastError != null) {
+            g.drawString(forecastError, x, y + 18);
+        } else if (forecast == null) {
+            g.drawString("Press Forecast to run " + FORECAST_TRIALS, x, y + 18);
+            g.drawString("simulations from these settings", x, y + 36);
+        } else {
+            g.drawString(String.format("Wiped out in %.0f%% of %d runs",
+                    100 * forecast.eradicationRate(), forecast.trials()), x, y + 18);
+            g.drawString(String.format("Avg peak %.0f infected, %.1f s",
+                    forecast.meanPeakInfected(), forecast.millis() / 1000.0), x, y + 36);
+        }
+    }
+
+    /** Lists the latest outbreak events under the forecast block. */
     private void drawEventFeed(Graphics g) {
         int x = simScreenX + offset;
-        int y = offset * 52 + 100;
+        int y = offset * 66 + 4;
         g.setFont(new Font("Times New Roman", Font.BOLD, 16));
         g.setColor(Color.WHITE);
         g.drawString("Recent events", x, y);
@@ -328,47 +399,11 @@ public class SimulationPanel extends JPanel implements ActionListener {
         long deltaTime = currentTime - lastUpdateTime;
         lastUpdateTime = currentTime;
 
-        // Move each cell.
-        for (Cell cell : cells) {
-            cell.move(simScreenX, simScreenY, offset, offset);
-        }
-        // Check cell collisions. This stays a plain loop on purpose: each collision changes
-        // both cells, so the order matters and the work can't be split up safely, and a
-        // nested IntStream over the pairs would be harder to read than this loop.
-        for (int i = 0; i < cells.size(); i++) {
-
-            for (int j = i + 1; j < cells.size(); j++) {
-
-                Cell a = cells.get(i);
-                Cell b = cells.get(j);
-
-                if (a.collidesWith(b)) {
-
-                    a.onCollision(b, events);
-                }
-            }
-        }
-
-        // Update the season system.
+        // The shared rules (also used by the forecast), with seasons in between.
+        OutbreakRules.moveAll(cells, simScreenX, simScreenY, offset);
+        OutbreakRules.resolveCollisions(cells, events);
         seasonManager.update(cells, deltaTime);
-
-        // Random deaths and duplications. Both lists are picked from the population as it
-        // is now, before either change is applied (a dying cell can still duplicate).
-        List<Cell> dying = cells.stream()
-                .filter(c -> Math.random() < 0.0001)
-                .toList();
-        List<Cell> duplicating = cells.stream()
-                .filter(Cell::canDuplicate)
-                .filter(c -> Math.random() < 0.0002)
-                .toList();
-
-        cells.removeAll(dying);
-        dying.forEach(events::died);
-        duplicating.forEach(parent -> {
-            Cell child = parent.duplicate(cells.size());
-            cells.add(child);
-            events.born(parent, child);
-        });
+        OutbreakRules.randomTurnover(cells, events);
 
         if (simTick % 125 == 0) {
             Census census = census();

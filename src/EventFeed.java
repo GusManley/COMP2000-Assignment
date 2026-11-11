@@ -10,7 +10,7 @@ import java.util.List;
  * winter and spring and would flood the feed, so it leaves those as the empty defaults.
  */
 public class EventFeed implements OutbreakListener {
-    private static final int MAX_LINES = 8;
+    private static final int MAX_LINES = 5;
     private final Deque<String> lines = new ArrayDeque<>();
 
     @Override
